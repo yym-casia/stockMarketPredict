@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-06-12 11:40:51",
+  "period": {
+    "start": "2025-08-13",
+    "end": "2026-06-12",
+    "days": 200
+  },
+  "results": [
+    {
+      "name": "基准3连阳",
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 203981.44,
+        "total_return_pct": 103.98,
+        "peak_equity": 210397.22,
+        "max_drawdown_pct": 53.22,
+        "total_trades": 108,
+        "buy_count": 108,
+        "add_count": 0,
+        "win_rate": 34.3,
+        "profit_factor": 2.77,
+        "avg_win": 4401.13,
+        "avg_loss": -829.02,
+        "avg_profit_per_trade": 962.79,
+        "monthly_return_pct": 7.77,
+        "months_to_10m": 52.0,
+        "trend_buys": 108,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 103981.43,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 8
+    },
+    {
+      "name": "方案A严进宽出",
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 205246.54,
+        "total_return_pct": 105.25,
+        "peak_equity": 207907.24,
+        "max_drawdown_pct": 52.66,
+        "total_trades": 107,
+        "buy_count": 107,
+        "add_count": 0,
+        "win_rate": 34.6,
+        "profit_factor": 2.84,
+        "avg_win": 4394.12,
+        "avg_loss": -819.08,
+        "avg_profit_per_trade": 983.61,
+        "monthly_return_pct": 7.84,
+        "months_to_10m": 51.5,
+        "trend_buys": 107,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 105246.58,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 4
+    },
+    {
+      "name": "方案D延迟确认",
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 200469.91,
+        "total_return_pct": 100.47,
+        "peak_equity": 205581.34,
+        "max_drawdown_pct": 52.12,
+        "total_trades": 108,
+        "buy_count": 108,
+        "add_count": 0,
+        "win_rate": 33.3,
+        "profit_factor": 2.72,
+        "avg_win": 4412.12,
+        "avg_loss": -810.65,
+        "avg_profit_per_trade": 930.28,
+        "monthly_return_pct": 7.58,
+        "months_to_10m": 53.5,
+        "trend_buys": 108,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 100469.93,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 7
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "date": "2026-06-15",
+  "generated_at": "2026-06-15 18:59:07",
+  "is_trading_day": true,
+  "screen_only": true,
+  "screen_mode": "eod_backtest",
+  "market_sentiment": {
+    "score": 70.3,
+    "level": "strong",
+    "breadth_score": 76.3,
+    "trend_5d": 1.6,
+    "trend_20d": -8.35,
+    "mainlines": [
+      "电子化学品Ⅱ",
+      "元件",
+      "半导体",
+      "玻璃玻纤",
+      "有色金属"
+    ],
+    "signals": [
+      "广度76",
+      "5日趋势+1.6%",
+      "20日趋势-8.3%",
+      "主线:电子化学品Ⅱ,元件,半导体"
+    ],
+    "source": "eod_backtest_regime"
+  },
+  "market_enter": true,
+  "market_reason": "市场条件允许入场",
+  "portfolio_summary": {
+    "active_count": 1,
+    "max_positions": 5,
+    "available_slots": 4,
+    "win_rate": 0.0,
+    "avg_profit": 0.0,
+    "total_trades": 0
+  },
+  "urgent_alerts": [],
+  "operations": {
+    "sell": [],
+    "partial_sell": [],
+    "add": [],
+    "dip_refill": [],
+    "buy": [
+      {
+        "code": "000630",
+        "name": "铜陵有色",
+        "action": "买入",
+        "priority": "normal",
+        "buy_price": 7.66,
+        "take_profit": 8.81,
+        "stop_loss": 7.43,
+        "confidence": 0.3615,
+        "tech_score": 100,
+        "fund_score": 50,
+        "reason": "涨幅7.9% | 板块有色金属 | 技术100 | 资金50",
+        "rank": 1
+      }
+    ],
+    "hold": []
+  },
+  "summary": "收盘选股1只（回测同款，基准日2026-06-15），可买入4只"
+}

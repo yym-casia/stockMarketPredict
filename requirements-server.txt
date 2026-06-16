@@ -1,0 +1,12 @@
+# 服务器部署依赖（精简，跳过难装的 ta-lib / pyfolio）
+pandas>=2.0.0
+numpy>=1.24.0
+requests>=2.31.0
+pyyaml>=6.0
+akshare>=1.12.0
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+lightgbm>=4.0.0
+joblib>=1.3.0
+tqdm>=4.65.0
+python-dotenv>=1.0.0

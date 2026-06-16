@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Secrets & keys
+deploy_key.pem
+*.pem
+.env
+.env.*
+
+# Large / generated data
+data/backtest_store/*.pkl
+data/ml_score_cache/
+data/history_cache/
+models/
+*.pkl
+
+# Runtime outputs (keep structure via README)
+data/portfolio_backup_*
+data/.last_*
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Local server config backup
+config/*.server.bak

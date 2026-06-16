@@ -1,0 +1,103 @@
+{
+  "generated_at": "2026-06-12 10:43:12",
+  "period": {
+    "start": "2025-08-13",
+    "end": "2026-06-12",
+    "days": 200
+  },
+  "results": [
+    {
+      "name": "连阳3天",
+      "overrides": {
+        "shakeout_rebuy_mode": "consecutive_yang",
+        "shakeout_rebuy_min_up_days": 3
+      },
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 203981.44,
+        "total_return_pct": 103.98,
+        "peak_equity": 210397.22,
+        "max_drawdown_pct": 53.22,
+        "total_trades": 108,
+        "buy_count": 108,
+        "add_count": 0,
+        "win_rate": 34.3,
+        "profit_factor": 2.77,
+        "avg_win": 4401.13,
+        "avg_loss": -829.02,
+        "avg_profit_per_trade": 962.79,
+        "monthly_return_pct": 7.77,
+        "months_to_10m": 52.0,
+        "trend_buys": 108,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 103981.43,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 8
+    },
+    {
+      "name": "连阳4天",
+      "overrides": {
+        "shakeout_rebuy_mode": "consecutive_yang",
+        "shakeout_rebuy_min_up_days": 4
+      },
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 187891.6,
+        "total_return_pct": 87.89,
+        "peak_equity": 193801.31,
+        "max_drawdown_pct": 49.21,
+        "total_trades": 113,
+        "buy_count": 113,
+        "add_count": 0,
+        "win_rate": 31.0,
+        "profit_factor": 2.45,
+        "avg_win": 4244.32,
+        "avg_loss": -777.69,
+        "avg_profit_per_trade": 777.8,
+        "monthly_return_pct": 6.85,
+        "months_to_10m": 60.0,
+        "trend_buys": 113,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 87891.57,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 5
+    },
+    {
+      "name": "连阳5天",
+      "overrides": {
+        "shakeout_rebuy_mode": "consecutive_yang",
+        "shakeout_rebuy_min_up_days": 5
+      },
+      "summary": {
+        "initial_capital": 100000,
+        "final_capital": 192052.53,
+        "total_return_pct": 92.05,
+        "peak_equity": 194193.52,
+        "max_drawdown_pct": 49.31,
+        "total_trades": 113,
+        "buy_count": 113,
+        "add_count": 0,
+        "win_rate": 31.9,
+        "profit_factor": 2.55,
+        "avg_win": 4212.02,
+        "avg_loss": -773.77,
+        "avg_profit_per_trade": 814.62,
+        "monthly_return_pct": 7.09,
+        "months_to_10m": 57.7,
+        "trend_buys": 113,
+        "limit_up_buys": 0,
+        "doubler_buys": 0,
+        "trend_profit": 92052.55,
+        "limit_up_profit": 0,
+        "doubler_profit": 0
+      },
+      "rebuy_buys": 3
+    }
+  ]
+}

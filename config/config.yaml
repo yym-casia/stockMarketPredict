@@ -1,0 +1,149 @@
+portfolio:
+  max_positions: 5
+  max_hold_days: 90
+strategy:
+  sector_standard: eastmoney
+  min_change: 5.0
+  max_change: 10.0
+  min_tech_score: 70
+  min_volume_ratio: 1.35
+  min_rsi: 35
+  max_rsi: 55
+  min_conditions: 3
+  require_bullish_candle: true
+  require_macd: true
+  require_ma_trend: true
+  require_macd_golden: true
+  close_strength_min: 0.6
+  max_prev_drop: 5.0
+  min_composite_score: 72
+  market_min_score: 50
+  market_full_score: 55
+  market_entry_use_breadth: true
+  market_defensive_enabled: true
+  market_block_bearish_entry: false
+  market_bearish_score: 35
+  market_bearish_trend_pct: -6.0
+  market_defensive_exit_pct: -3.5
+  weak_market_max_positions: 2
+  disable_add_in_bearish: false
+  exit_cold_sector_in_weak: true
+  filter_cold_sector_in_weak: true
+  mainline_enabled: true
+  mainline_top_n: 5
+  mainline_min_sector_change: 0.4
+  mainline_min_momentum_5d: 1.5
+  mainline_hot_boost: 12
+  require_mainline_weak: false
+  require_hot_sector: true
+  hot_sector_top_n: 5
+  require_trend_peak: false
+  trailing_start: 15.0
+  trailing_pct: 6.0
+  stop_loss: 3.0
+  # 洗盘震仓：收盘确认止损 + 全仓止损 + 止损后接回
+  stop_loss_on_close: true
+  trend_stop_loss_partial_ratio: 0
+  trend_dip_refill_pct: null
+  trend_half_hold_exit_pct: null
+  shakeout_rebuy_enabled: true
+  shakeout_rebuy_days: 10
+  # 方案A严进宽出：3连阳 + 收复止损价 + 弱市不接 + 接回宽止损
+  shakeout_rebuy_mode: consecutive_yang
+  shakeout_rebuy_min_up_days: 3
+  shakeout_rebuy_require_recover: true
+  shakeout_rebuy_recover_pct: 0.0
+  shakeout_rebuy_skip_weak_regime: true
+  shakeout_rebuy_stop_loss: 4.5
+  shakeout_rebuy_stop_grace_days: 5
+  shakeout_rebuy_delayed_confirm: false
+  shakeout_rebuy_size_ratio: 0.5
+  shakeout_rebuy_max_daily: 1
+  shakeout_rebuy_min_volume_ratio: 1.1
+  # 总资金20%专用于震仓接回，趋势只用80%；接回不占5只持仓上限
+  shakeout_reserve_pct: 20.0
+  shakeout_bypass_max_positions: true
+  trend_peak_lookback_days: 30
+  trend_max_peak_pct: 0
+  # 追高过滤：0=关闭；-3 表示收盘须距30日高点回调≥3%
+  min_dist_from_high_pct: 0
+  dist_from_high_lookback_days: 30
+  max_prior_gain_pct: 0
+  max_prior_gain_days: 20
+  # 趋势末期过滤：连涨>3天 且 近10日涨停>1个 → 不买
+  late_trend_filter_enabled: true
+  max_consecutive_up_days: 3
+  max_limit_ups_before_entry: 1
+  limit_up_lookback_days: 10
+  late_trend_block_mode: both
+  # 全仓止损，无半仓/补仓/余仓清仓
+  min_ml_score: 0.0
+  ml_weight: 0.35
+  ml_rank_only: true
+  take_profit_levels: []
+data:
+  source: neodata
+  history_days: 120
+  predict_days: 5
+  target_profit: 5.0
+  take_profit: 5.0
+  stop_loss: 3.0
+  min_confidence: 0.55
+limit_up:
+  enabled: false
+  lookback_days: 30
+  min_volume_ratio: 3.0
+  max_daily_picks: 2
+  score_boost: 15
+  stop_loss: 7.0
+  trailing_start: 15.0
+  trailing_pct: 10.0
+  # trailing_pct: 最高收益率的10%为回落阈值，如最高16.9%则回落1.69%即卖
+  take_profit_levels: []
+doubler:
+  independent_enabled: false
+  boost_enabled: false
+  score_boost: 15
+  max_rsi: 72
+  max_return_20d_pct: 30
+  min_conditions: 5
+  max_daily_picks: 1
+stock_selection:
+  sector_standard: eastmoney
+  daily_picks: 5
+  pool_size: 3000
+  min_market_cap: 20
+  max_market_cap: 5000
+  exclude_st: true
+  min_listing_days: 60
+model:
+  type: xgboost
+  train_ratio: 0.8
+  max_features: 50
+  cv_folds: 5
+backtest:
+  use_data_store: true
+  use_ml_score_cache: true
+  initial_capital: 100000
+  buy_amount_pct: 0.20
+  trend_buy_amount_pct: 0.20
+  trend_max_buy_pct: 0.20
+  add_trigger_pct: 10.0
+  add_ratio: 0.30
+  trend_add_amount_pct: null
+  compound_buy: true
+  compound_only_profit: true
+  max_buy_pct: 0.20
+  ml_scale_buy: true
+  pool_size: 3000
+  use_ml: true
+  max_position: 20
+  commission: 0.15
+  stamp_tax: 0.1
+targets:
+  final_capital: 150000
+  target_return_pct: 50
+  backtest_days: 200
+  backtest_end_date: '2026-06-12'
+  success_rate: 90
+  min_success_rate: 60
