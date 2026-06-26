@@ -396,12 +396,8 @@ class Position:
     sector: str = '其他'
     
     def __post_init__(self):
-        if not self.take_profit_levels:
-            self.take_profit_levels = [
-                {'level': 1, 'pct': 5.0, 'ratio': 0.3, 'triggered': False},
-                {'level': 2, 'pct': 10.0, 'ratio': 0.3, 'triggered': False},
-                {'level': 3, 'pct': 15.0, 'ratio': 0.4, 'triggered': False}
-            ]
+        if self.take_profit_levels is None:
+            self.take_profit_levels = []
         if self.highest_price == 0.0:
             self.highest_price = self.buy_price
 
@@ -428,11 +424,7 @@ class TrailingStopManager:
             buy_price=buy_price,
             buy_date=buy_date,
             sector=sector,
-            take_profit_levels=custom_levels or [
-                {'level': 1, 'pct': 5.0, 'ratio': 0.3, 'triggered': False},
-                {'level': 2, 'pct': 10.0, 'ratio': 0.3, 'triggered': False},
-                {'level': 3, 'pct': 15.0, 'ratio': 0.4, 'triggered': False}
-            ],
+            take_profit_levels=custom_levels or [],
             stop_loss=buy_price * 0.97
         )
         self.positions[code] = position

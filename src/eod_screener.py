@@ -211,6 +211,8 @@ def screen_like_backtest(
         bt = CapitalBacktester(max_positions=day_max)
         bt._sector_map = sector_map
         bt._current_regime = regime
+        bt._day_index = {screen_date: 0}
+        bt._stop_cooldown = {}
         bt.ml_scorer = ml_scorer
         bt.ml_data = ml_data or {}
         bt._full_config = config

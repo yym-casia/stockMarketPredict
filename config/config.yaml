@@ -1,149 +1,219 @@
+# =============================================================================
+# 全局配置 — 回测 / 实盘 / 每日选股共用
+# 合并规则：config.yaml 的 strategy 段优先于 run_backtest_capital 变体预设
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# portfolio — 持仓上限（与 strategy 里大盘仓位联动）
+# -----------------------------------------------------------------------------
 portfolio:
-  max_positions: 5
-  max_hold_days: 90
+  max_positions: 5          # 默认最多持股只数；实际受 market_full / weak_market 动态调节
+  max_hold_days: 90          # 单票持仓超过该交易日数，到期按市价清仓
+
+# -----------------------------------------------------------------------------
+# strategy — 趋势选股（均衡模式：日均有候选 + 保留质量护栏）
+# 思路：热门板块定方向 | ML/综合分排序择优 | 末期/追高过滤保胜率
+# -----------------------------------------------------------------------------
 strategy:
-  sector_standard: eastmoney
-  min_change: 5.0
-  max_change: 10.0
-  min_tech_score: 70
-  min_volume_ratio: 1.35
-  min_rsi: 35
-  max_rsi: 55
-  min_conditions: 3
-  require_bullish_candle: true
-  require_macd: true
-  require_ma_trend: true
-  require_macd_golden: true
-  close_strength_min: 0.6
-  max_prev_drop: 5.0
-  min_composite_score: 72
-  market_min_score: 50
-  market_full_score: 55
-  market_entry_use_breadth: true
-  market_defensive_enabled: true
-  market_block_bearish_entry: false
-  market_bearish_score: 35
-  market_bearish_trend_pct: -6.0
-  market_defensive_exit_pct: -3.5
-  weak_market_max_positions: 2
-  disable_add_in_bearish: false
-  exit_cold_sector_in_weak: true
-  filter_cold_sector_in_weak: true
-  mainline_enabled: true
-  mainline_top_n: 5
-  mainline_min_sector_change: 0.4
-  mainline_min_momentum_5d: 1.5
-  mainline_hot_boost: 12
-  require_mainline_weak: false
-  require_hot_sector: true
-  hot_sector_top_n: 5
-  require_trend_peak: false
-  trailing_start: 15.0
-  trailing_pct: 6.0
-  stop_loss: 3.0
-  # 洗盘震仓：收盘确认止损 + 全仓止损 + 止损后接回
-  stop_loss_on_close: true
-  trend_stop_loss_partial_ratio: 0
-  trend_dip_refill_pct: null
-  trend_half_hold_exit_pct: null
-  shakeout_rebuy_enabled: true
-  shakeout_rebuy_days: 10
-  # 方案A严进宽出：3连阳 + 收复止损价 + 弱市不接 + 接回宽止损
-  shakeout_rebuy_mode: consecutive_yang
-  shakeout_rebuy_min_up_days: 3
-  shakeout_rebuy_require_recover: true
-  shakeout_rebuy_recover_pct: 0.0
-  shakeout_rebuy_skip_weak_regime: true
-  shakeout_rebuy_stop_loss: 4.5
-  shakeout_rebuy_stop_grace_days: 5
-  shakeout_rebuy_delayed_confirm: false
-  shakeout_rebuy_size_ratio: 0.5
-  shakeout_rebuy_max_daily: 1
-  shakeout_rebuy_min_volume_ratio: 1.1
-  # 总资金20%专用于震仓接回，趋势只用80%；接回不占5只持仓上限
-  shakeout_reserve_pct: 20.0
-  shakeout_bypass_max_positions: true
-  trend_peak_lookback_days: 30
-  trend_max_peak_pct: 0
-  # 追高过滤：0=关闭；-3 表示收盘须距30日高点回调≥3%
-  min_dist_from_high_pct: 0
-  dist_from_high_lookback_days: 30
-  max_prior_gain_pct: 0
-  max_prior_gain_days: 20
-  # 趋势末期过滤：连涨>3天 且 近10日涨停>1个 → 不买
-  late_trend_filter_enabled: true
-  max_consecutive_up_days: 3
-  max_limit_ups_before_entry: 1
-  limit_up_lookback_days: 10
-  late_trend_block_mode: both
-  # 全仓止损，无半仓/补仓/余仓清仓
-  min_ml_score: 0.0
-  ml_weight: 0.35
-  ml_rank_only: true
+  sector_standard: eastmoney # 板块分类标准：eastmoney=东方财富行业；影响热门板块统计
+
+  # --- 买入：当日涨幅（适度放宽，避免 4% 窄带整天无票）---
+  min_change: 3.5            # 当日涨幅下限 (%)，低于不买
+  max_change: 10.0           # 当日涨幅上限 (%)，过高视为追高不买
+
+  # --- 买入：技术指标 ---
+  min_tech_score: 62         # 技术信号总分下限（RSI/MACD/量比/均线加权）
+  min_volume_ratio: 1.25     # 买入日量比下限（成交量/5日均量）
+  max_volume_ratio: 4.0      # 买入日量比上限；0 表示不设上限
+  min_rsi: 35                # RSI 下限
+  max_rsi: 68                # RSI 上限（过热不买）
+  min_conditions: 2          # 四项技术条件(RSI/MACD/量比/均线)至少满足几项
+  require_bullish_candle: true # 要求当日阳线（收盘>开盘）
+  require_macd: false        # 要求 MACD 多头或金叉（false=不硬拦，仍计分）
+  require_ma_trend: false    # 要求均线多头或 MA5≥MA10
+  require_macd_golden: false # 要求 MACD 金叉或柱状线走强
+  close_strength_min: 0.45   # 收盘强度下限：(收-低)/(高-低)，越大表示收在高位
+  max_prev_drop: 5.0         # 昨日跌幅超过此值不买 (%)
+  min_composite_score: 62    # 综合评分下限（技术分+涨幅+ML 加权后）
+
+  # --- 大盘情绪与动态仓位 ---
+  market_min_score: 42         # 大盘情绪分低于此值：禁止新开仓
+  market_full_score: 55        # 情绪分≥此值视为强市，可用满仓上限
+  market_full_max_positions: 5 # 强市时最多持股只数（仍受 portfolio.max_positions 封顶）
+  market_entry_use_breadth: true   # true=用市场广度算入场分；false=用综合情绪分
+  market_defensive_enabled: true   # 开启弱市/熊市防御（收紧止盈、禁加仓等）
+  market_block_bearish_entry: true # 熊市 regime 下禁止新开仓
+  market_bearish_score: 35       # 情绪分≤此值判定为熊市
+  market_bearish_trend_pct: -6.0 # 指数 N 日跌幅≤此值辅助判定熊市 (%)
+  market_defensive_exit_pct: -3.5  # 弱市下单票浮亏达此%倾向提前离场 (%)
+  weak_market_max_positions: 3     # 弱市时最多持股只数
+
+  disable_add_in_bearish: false    # 熊市是否禁止「强者恒强」加仓
+  exit_cold_sector_in_weak: true   # 弱市时冷门板块持仓倾向退出
+  filter_cold_sector_in_weak: true # 弱市时不买非热门板块股票
+
+  # --- 热门板块 / 主线加分 ---
+  mainline_enabled: true           # 是否计算主线板块并给候选股加分
+  mainline_top_n: 10               # 主线板块取涨幅前 N 个行业（需 ≥ hot_sector_top_n）
+  mainline_min_sector_change: 0.35 # 板块当日涨幅低于此不算主线 (%)
+  mainline_min_momentum_5d: 1.0    # 板块 5 日动量下限 (%)
+  mainline_hot_boost: 10           # 属于主线板块的评分加分
+  require_mainline_weak: false     # 弱市是否强制要求属于主线板块
+  require_hot_sector: true         # 是否只买当日热门板块成分股
+  hot_sector_top_n: 10             # 热门板块取前 N 个（与预筛池联动）
+
+  require_trend_peak: false        # 是否要求左侧 N 日无「大山峰」（见 trend_max_peak_pct）
+
+  # --- 出场：移动止盈 + 硬止损（趋势主策略）---
+  trailing_start: 15.0       # 浮盈达此%后启动移动止盈
+  trailing_pct: 8.0            # 从持仓最高盈利回撤此%即卖出
+  stop_loss: 5.0               # ★回测/实盘趋势止损 (%) — 改这里！不是 data.stop_loss
+
+  # --- 阶梯止盈（可选，与移动止盈并行）---
+  # [] = 关闭，仅 trailing + stop_loss
+  # 每档: pct=盈利触发%, ratio=卖出比例(0~1)
+  # take_profit_levels:
+  #   - { pct: 10.0, ratio: 0.15 }
+  #   - { pct: 18.0, ratio: 0.25 }
+  #   - { pct: 28.0, ratio: 0.60 }
   take_profit_levels: []
+
+  # --- 止损执行方式 ---
+  stop_loss_on_close: true           # true=仅收盘价跌破止损才卖；false=盘中触及即卖
+  trend_stop_loss_partial_ratio: 0   # 趋势止损卖出比例；0=全卖
+  trend_dip_refill_pct: null         # 止损后跌破再跌 X% 补半仓；null=关闭
+  trend_half_hold_exit_pct: null     # 半仓持有余仓浮亏达 X% 清仓；null=关闭
+
+  # --- 震仓接回（止损后观察再接）---
+  shakeout_rebuy_enabled: true       # 是否启用震仓接回
+  shakeout_rebuy_days: 60            # 止损后最多观察 N 个交易日
+  shakeout_rebuy_mode: consecutive_yang  # 接回模式：consecutive_yang=连续阳线
+  shakeout_rebuy_min_up_days: 3      # 接回需连续阳线天数
+  shakeout_rebuy_require_recover: true   # 是否要求收复止损价
+  shakeout_rebuy_recover_pct: 0.0    # 收复止损价的额外溢价 (%)
+  shakeout_rebuy_skip_weak_regime: false  # 弱市/熊市不接回
+  shakeout_rebuy_stop_loss: 4.5      # 接回仓位独立止损 (%)
+  shakeout_rebuy_stop_grace_days: 5  # 接回后 N 日内不触发止损（宽限期）
+  shakeout_rebuy_delayed_confirm: false  # 是否延迟一天确认再接
+  shakeout_rebuy_size_ratio: 0.5     # 每次接回使用震仓资金池的比例
+  shakeout_rebuy_max_daily: 1        # 每日最多接回几只
+  shakeout_rebuy_min_volume_ratio: 1.3  # 接回日量比下限（独立于主策略 max_volume_ratio）
+  shakeout_reserve_pct: 15.0         # 总资产中预留专用于震仓接回的 (%)
+  shakeout_bypass_max_positions: true  # 接回仓位不占 max_positions 名额
+
+  # --- 左侧形态 / 追高过滤 ---
+  trend_peak_lookback_days: 30   # 左侧峰值检测回溯天数
+  trend_max_peak_pct: 0          # 左侧 N 日最低到最高涨幅上限；0=关闭此过滤
+  min_dist_from_high_pct: 0      # 要求距 N 日高点回调至少 X%；0=关闭
+  dist_from_high_lookback_days: 30 # 高点回溯天数
+  max_prior_gain_pct: 35         # 近 N 日累计涨幅超过此值不买 (%)
+  max_prior_gain_days: 20        # 累计涨幅统计天数
+  max_chase_prev_day_pct: 7.0    # 昨日涨幅超过此值视为追涨不买 (%)
+
+  stop_cooldown_days: 5          # 止损卖出后 N 个交易日内不再买入同代码
+
+  # --- 趋势末期过滤（防连板末段接盘）---
+  late_trend_filter_enabled: true    # 是否启用
+  max_consecutive_up_days: 4         # 买入前连涨天数上限（超过则视为末期）
+  max_limit_ups_before_entry: 1      # 近 lookback 日内涨停次数上限
+  limit_up_lookback_days: 10         # 涨停次数统计窗口（交易日）
+  late_trend_block_mode: both        # both=连涨且涨停过多才拦；any=任一满足即拦
+
+  # --- ML 模型过滤 ---
+  min_ml_score: 0.32       # ML 概率下限，低于不买
+  ml_weight: 0.40          # ML 分在综合评分中的权重 (0~1)
+  ml_rank_only: true       # true=ML 只参与排序不过滤硬门槛（仍受 min_ml_score 约束）
+
+# -----------------------------------------------------------------------------
+# data — 数据源与模型训练/展示用阈值（非回测主止损逻辑）
+# -----------------------------------------------------------------------------
 data:
-  source: neodata
-  history_days: 120
-  predict_days: 5
-  target_profit: 5.0
-  take_profit: 5.0
-  stop_loss: 3.0
-  min_confidence: 0.55
+  source: neodata            # 行情数据源标识
+  history_days: 120            # 拉取历史 K 线天数
+  predict_days: 5              # 预测/标签向前看天数（训练用）
+  target_profit: 5.0           # 训练标签：目标盈利 (%)
+  # ⚠️ 下列两项仅用于旧版推荐展示 / ML 训练标签，不参与回测与实盘持仓止损
+  take_profit: 5.0             # 展示用单一止盈%，≠ strategy 出场逻辑
+  stop_loss: 3.0               # 展示用单一止损%，≠ strategy.stop_loss（回测读 strategy 段）
+  min_confidence: 0.55         # 旧版推荐最低置信度
+
+# -----------------------------------------------------------------------------
+# limit_up — 涨停首板策略（enabled=false 时回测不参与）
+# -----------------------------------------------------------------------------
 limit_up:
-  enabled: false
-  lookback_days: 30
-  min_volume_ratio: 3.0
-  max_daily_picks: 2
-  score_boost: 15
-  stop_loss: 7.0
-  trailing_start: 15.0
-  trailing_pct: 10.0
-  # trailing_pct: 最高收益率的10%为回落阈值，如最高16.9%则回落1.69%即卖
-  take_profit_levels: []
+  enabled: false               # 是否启用涨停首板独立选股
+  lookback_days: 30            # 首板判定：此前 N 日无涨停
+  min_volume_ratio: 3.0        # 涨停日量比下限（相对昨量）
+  max_daily_picks: 1           # 每日最多买几只
+  score_boost: 15              # 涨停候选在综合评分上的加分
+  stop_loss: 5.0               # 涨停仓位止损 (%)
+  trailing_start: 15.0         # 涨停移动止盈：最高盈利达此%后启用
+  trailing_pct: 5.0           # 盈利从峰值回落 ≥ 峰值×此% 时卖出
+  take_profit_levels: []       # 涨停阶梯止盈；[] 关闭
+
+# -----------------------------------------------------------------------------
+# doubler — 翻倍股模式（独立选股或给趋势股加分）
+# -----------------------------------------------------------------------------
 doubler:
-  independent_enabled: false
-  boost_enabled: false
-  score_boost: 15
-  max_rsi: 72
-  max_return_20d_pct: 30
-  min_conditions: 5
-  max_daily_picks: 1
+  independent_enabled: false   # 是否作为独立策略买入
+  boost_enabled: false         # 是否给趋势候选股叠加翻倍模式加分
+  score_boost: 15              # 翻倍模式命中时的评分加分
+  max_rsi: 72                  # 翻倍模式 RSI 上限
+  max_return_20d_pct: 30       # 近 20 日涨幅上限 (%)，过高不买
+  min_conditions: 5            # 翻倍模式技术条件至少满足几项
+  max_daily_picks: 1           # 翻倍独立策略每日最多买几只
+
+# -----------------------------------------------------------------------------
+# stock_selection — 股票池与每日推荐数量
+# -----------------------------------------------------------------------------
 stock_selection:
-  sector_standard: eastmoney
-  daily_picks: 5
-  pool_size: 3000
-  min_market_cap: 20
-  max_market_cap: 5000
-  exclude_st: true
-  min_listing_days: 60
+  sector_standard: eastmoney # 选股池板块标签来源（与 strategy.sector_standard 建议一致）
+  daily_picks: 5             # 每日展示/推荐前几名（排序后取 top N）
+  pool_size: 3000            # 选股池最大股票数（与 backtest.pool_size 对齐）
+  min_market_cap: 20         # 最小市值（亿元）
+  max_market_cap: 5000       # 最大市值（亿元）
+  exclude_st: true           # 剔除 ST/*ST
+  min_listing_days: 60        # 上市满 N 天才纳入池
+
+# -----------------------------------------------------------------------------
+# model — ML 训练超参（run_train_ml 等）
+# -----------------------------------------------------------------------------
 model:
-  type: xgboost
-  train_ratio: 0.8
-  max_features: 50
-  cv_folds: 5
+  type: xgboost              # 模型类型
+  train_ratio: 0.8           # 训练集占比
+  max_features: 50           # 特征选择上限
+  cv_folds: 5                # 交叉验证折数
+
+# -----------------------------------------------------------------------------
+# backtest — 资金回测专用（run_backtest_capital.py）
+# -----------------------------------------------------------------------------
 backtest:
-  use_data_store: true
-  use_ml_score_cache: true
-  initial_capital: 100000
-  buy_amount_pct: 0.20
-  trend_buy_amount_pct: 0.20
-  trend_max_buy_pct: 0.20
-  add_trigger_pct: 10.0
-  add_ratio: 0.30
-  trend_add_amount_pct: null
-  compound_buy: true
-  compound_only_profit: true
-  max_buy_pct: 0.20
-  ml_scale_buy: true
-  pool_size: 3000
-  use_ml: true
-  max_position: 20
-  commission: 0.15
-  stamp_tax: 0.1
+  use_data_store: true       # 使用本地 data/backtest_store 缓存行情，减少重复拉取
+  use_ml_score_cache: true   # 使用 ML 评分磁盘缓存
+  initial_capital: 200000    # 初始资金（元）
+  buy_amount_pct: 0.2          # 默认单笔买入占总资产比例 (20%)
+  trend_buy_amount_pct: 0.2    # 趋势新建仓买入比例
+  trend_max_buy_pct: 0.2       # 趋势单票买入上限比例
+  add_trigger_pct: 10.0        # 强者恒强：浮盈每涨此%触发加仓判断
+  add_ratio: 0.30              # 加仓时增加当前持仓市值的比例
+  trend_add_amount_pct: null   # 趋势加仓按总资产比例；null=关闭趋势加仓
+  compound_buy: true           # 是否按净值复利放大买入基数
+  compound_only_profit: true   # 仅当净值>初始资金时才复利放大
+  max_buy_pct: 0.2             # 单笔买入硬上限（须 ≥ buy_amount_pct）
+  ml_scale_buy: true           # 按 ML 分缩放买入金额 (0.7~1.3 倍)
+  pool_size: 3000              # 回测加载股票池大小
+  use_ml: true                 # 回测是否使用 ML 评分
+  max_position: 5              # JSON 展示用；实际持仓上限读 portfolio.max_positions
+  commission: 0.15             # 买卖佣金 (%)
+  stamp_tax: 0.1               # 卖出印花税 (%)
+
+# -----------------------------------------------------------------------------
+# targets — 回测区间与目标检验（run_backtest_capital / 优化脚本）
+# -----------------------------------------------------------------------------
 targets:
-  final_capital: 150000
-  target_return_pct: 50
-  backtest_days: 200
-  backtest_end_date: '2026-06-12'
-  success_rate: 90
-  min_success_rate: 60
+  final_capital: 150000      # 目标期末资金（元），用于部分脚本达标判断
+  target_return_pct: 50      # 目标收益率 (%)
+  backtest_days: 200         # 回测交易日数量
+  backtest_end_date: '2026-06-12'  # 回测结束日期（含），向前取 backtest_days 个交易日
+  success_rate: 90           # 期望胜率目标 (%)，用于报告展示
+  min_success_rate: 60       # 最低可接受胜率 (%)，用于 backtest_runner 达标判断

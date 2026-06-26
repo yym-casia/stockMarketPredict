@@ -11,6 +11,7 @@ DEFAULT_STRATEGY = {
     'max_change': 5.0,
     'min_tech_score': 65,
     'min_volume_ratio': 1.2,
+    'max_volume_ratio': 0,
     'min_rsi': 35,
     'max_rsi': 55,
     'min_conditions': 3,
@@ -52,8 +53,12 @@ DEFAULT_STRATEGY = {
     'shakeout_rebuy_size_ratio': 0.5,
     'shakeout_rebuy_max_daily': 1,
     'shakeout_rebuy_min_volume_ratio': 1.1,
+    'shakeout_rebuy_size_ratio': 0.5,
     'shakeout_reserve_pct': 20.0,
     'shakeout_bypass_max_positions': True,
+    'stop_cooldown_days': 0,
+    'max_chase_prev_day_pct': 0,
+    'market_full_max_positions': 5,
     'min_ml_score': 0.0,
     'ml_weight': 0.25,
 }
@@ -126,6 +131,9 @@ def check_technical_signals_strict(df: pd.DataFrame, cfg: dict) -> Dict:
     if pd.isna(volume_ratio):
         volume_ratio = 1.0
     volume_ok = volume_ratio >= cfg['min_volume_ratio']
+    max_vr = cfg.get('max_volume_ratio', 0)
+    if max_vr and max_vr > 0:
+        volume_ok = volume_ok and volume_ratio <= max_vr
     volume_score = min(25, volume_ratio * 10) if volume_ok else 0
 
     ma5, ma10, ma20 = latest.get('ma5'), latest.get('ma10'), latest.get('ma20')
@@ -301,6 +309,9 @@ def screen_stock_row(row, hist_df: pd.DataFrame, cfg: dict,
     if len(hist_df) >= 2:
         prev_change = hist_df.iloc[-2].get('pct_change', 0)
         if not pd.isna(prev_change) and prev_change < -cfg.get('max_prev_drop', 5.0):
+            return None
+        max_chase = cfg.get('max_chase_prev_day_pct', 0)
+        if max_chase > 0 and not pd.isna(prev_change) and prev_change > max_chase:
             return None
 
     if cfg.get('require_trend_peak', True) and not trend_peak_ok(hist_df, cfg):

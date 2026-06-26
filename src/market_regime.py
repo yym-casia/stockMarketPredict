@@ -193,7 +193,7 @@ def analyze_market_regime(all_data: Dict[str, pd.DataFrame], date: str,
             can_enter = False
 
     if entry_score >= full_score:
-        max_pos = 5
+        max_pos = int(cfg.get('market_full_max_positions', 5))
     elif entry_score >= min_score and can_enter:
         max_pos = cfg.get('weak_market_max_positions', 3)
     else:

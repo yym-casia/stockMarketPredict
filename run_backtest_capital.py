@@ -12,6 +12,8 @@ import json
 import yaml
 from datetime import datetime
 
+import numpy as np
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from stock_pool_manager import get_screening_pool
@@ -19,11 +21,13 @@ from src.trading_calendar import _read_cache, refresh_trading_dates_cache
 from src.history_fetcher import get_history_fetcher
 from src.capital_backtest import CapitalBacktester
 from src.hot_sector_analytics import analyze_hot_sectors
+from src.trade_volume_stats import analyze_trade_volume_stats
+from src.buy_entry_stats import analyze_buy_entry_stats, ENTRY_NUMERIC, ENTRY_FLAGS
 from src.backtest_data_store import BacktestDataStore
 from src.ml_scorer import build_ml_features, get_ml_scorer
 from daily_pipeline_v4 import calculate_technical_indicators
 from src.strategy_filters import (
-    DEFAULT_STRATEGY, TP_SMALL_LOSS_BIG_WIN, TP_V9_RUN_FURTHER, TP_BIG_RUNNER,
+    load_strategy_config, TP_SMALL_LOSS_BIG_WIN, TP_V9_RUN_FURTHER, TP_BIG_RUNNER,
 )
 
 
@@ -41,6 +45,19 @@ def resolve_backtest_cfg(config: dict) -> dict:
         bt['buy_amount'] = initial * bt['buy_amount_pct']
     else:
         bt['buy_amount'] = bt.get('buy_amount', 15000)
+
+    port_max = config.get('portfolio', {}).get('max_positions')
+    if port_max is not None:
+        bt['portfolio_max_positions'] = int(port_max)
+        bt['max_position'] = int(port_max)  # JSON/展示用，与 portfolio 对齐
+
+    trend_pct = bt.get('trend_max_buy_pct') or bt.get('trend_buy_amount_pct') or bt.get('buy_amount_pct')
+    if trend_pct is not None:
+        trend_pct = float(trend_pct)
+        cap = bt.get('max_buy_pct')
+        if cap is None or float(cap) < trend_pct:
+            bt['max_buy_pct'] = trend_pct
+
     return bt
 
 
@@ -80,7 +97,6 @@ V7_TIGHT = {
     'close_strength_min': 0.6, 'min_composite_score': 70,
     'market_min_score': 50, 'trailing_start': 10.0, 'trailing_pct': 4.0,
     'stop_loss': 3.0, 'min_ml_score': 0.0, 'ml_weight': 0.35, 'ml_rank_only': True,
-    'take_profit_levels': TP_SMALL_LOSS_BIG_WIN,
 }
 
 V9_HIGH_UTIL = {
@@ -89,61 +105,70 @@ V9_HIGH_UTIL = {
     'close_strength_min': 0.6, 'min_composite_score': 72,
     'market_min_score': 50, 'trailing_start': 12.0, 'trailing_pct': 5.0,
     'stop_loss': 3.5, 'min_ml_score': 0.0, 'ml_weight': 0.35, 'ml_rank_only': True,
-    'take_profit_levels': TP_V9_RUN_FURTHER,
 }
 
+# 变体仅控制回测运行方式（策略参数以 config.yaml strategy 为准）
 _ISOLATED = {
-    **V9_HIGH_UTIL,
-    '_max_positions': 5,
-    '_buy_amount_pct': 0.2,
-    '_trend_buy_amount_pct': 0.2,
-    '_trend_max_buy_pct': 0.2,
     '_trend_add_amount_pct': None,
     '_add_ratio': 0.0,
     '_add_trigger_pct': 10.0,
     '_disable_doubler_boost': True,
-    'trend_max_peak_pct': 0,
     '_pool_size': 3000,
 }
 
-SHAKEOUT_PLAN_A = {
-    'shakeout_rebuy_enabled': True,
-    'shakeout_rebuy_mode': 'consecutive_yang',
-    'shakeout_rebuy_min_up_days': 3,
-    'shakeout_rebuy_require_recover': True,
-    'shakeout_rebuy_recover_pct': 0.0,
-    'shakeout_rebuy_skip_weak_regime': True,
-    'shakeout_rebuy_stop_loss': 4.5,
-    'shakeout_rebuy_stop_grace_days': 5,
-    'shakeout_rebuy_delayed_confirm': False,
-    'shakeout_rebuy_min_volume_ratio': 1.1,
-    'shakeout_reserve_pct': 20.0,
-    'shakeout_bypass_max_positions': True,
-}
-
+# 优化脚本用：仅趋势、隔离首板（run_optimize_* 引用此键）
 STRATEGY_VARIANTS = {
     '趋势选股': {
         **_ISOLATED,
-        **SHAKEOUT_PLAN_A,
-        'stop_loss': 3.0,
-        'trailing_start': 15.0,
-        'trailing_pct': 6.0,
-        'take_profit_levels': [],
-        'market_defensive_enabled': True,
-        'market_defensive_exit_pct': -3.5,
-        'filter_cold_sector_in_weak': True,
-        'exit_cold_sector_in_weak': True,
-        'weak_market_max_positions': 2,
         '_active_strategies': ['trend'],
         '_disable_limit_up': True,
     },
 }
 
 
+def backtest_variants_for_config(config: dict) -> dict:
+    """主资金回测：按 config.yaml 的 limit_up / doubler 开关决定参与策略。"""
+    lu_on = bool(config.get('limit_up', {}).get('enabled', False))
+    db_on = bool(config.get('doubler', {}).get('independent_enabled', False))
+    if not lu_on and not db_on:
+        return {'趋势选股': STRATEGY_VARIANTS['趋势选股']}
+
+    active = ['trend']
+    label_parts = ['趋势']
+    if lu_on:
+        active.append('limit_up')
+        label_parts.append('首板')
+    if db_on:
+        active.append('doubler')
+        label_parts.append('翻倍')
+    return {
+        '+'.join(label_parts): {
+            **_ISOLATED,
+            '_active_strategies': active,
+        },
+    }
+
+
+def _json_sanitize(obj):
+    """将 numpy 标量转为原生类型，避免 json.dump 失败。"""
+    if isinstance(obj, dict):
+        return {k: _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_sanitize(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    return obj
+
+
 def run_variant(name, variant_cfg, all_data, ml_data, trading_days, base_cfg, bt_cfg, ml_scorer):
-    clean = {k: v for k, v in variant_cfg.items() if not k.startswith('_')}
-    strat = {**DEFAULT_STRATEGY, **base_cfg.get('strategy', {}), **clean}
-    add_r = variant_cfg.get('_add_ratio', bt_cfg.get('add_ratio', 0.0))
+    # 策略参数唯一来源：config.yaml（经 load_strategy_config 合并 DEFAULT）
+    strat = load_strategy_config(base_cfg)
+    if variant_cfg.get('_active_strategies'):
+        strat['active_strategies'] = list(variant_cfg['_active_strategies'])
     v_buy_pct = variant_cfg.get('_buy_amount_pct', bt_cfg.get('buy_amount_pct'))
     v_buy = variant_cfg.get('_buy_amount', bt_cfg.get('buy_amount', 15000))
     v_max_pct = variant_cfg.get('_max_buy_pct', bt_cfg.get('max_buy_pct', 0.15))
@@ -162,9 +187,8 @@ def run_variant(name, variant_cfg, all_data, ml_data, trading_days, base_cfg, bt
             **run_cfg.get('limit_up', {}),
             'max_daily_picks': variant_cfg['_limit_up_max_daily_picks'],
         }
-    if variant_cfg.get('_active_strategies'):
-        strat['active_strategies'] = list(variant_cfg['_active_strategies'])
 
+    add_r = variant_cfg.get('_add_ratio', bt_cfg.get('add_ratio', 0.0))
     tester = CapitalBacktester(
         initial_capital=bt_cfg.get('initial_capital', 100000),
         buy_amount=v_buy,
@@ -217,12 +241,16 @@ def _variant_stats(r: dict) -> dict:
     }
 
 
-def print_comparison(results, period, bt_cfg=None):
+def print_comparison(results, period, bt_cfg=None, config=None):
     bt_cfg = bt_cfg or {}
+    config = config or {}
+    max_pos = config.get('portfolio', {}).get('max_positions', 10)
+    pct = bt_cfg.get('trend_buy_amount_pct', bt_cfg.get('buy_amount_pct', 0.1))
+    stop = config.get('strategy', {}).get('stop_loss', 15)
     target = 10_000_000
     print(f"\n{'='*96}")
     print(f"📊 独立策略对比 ({period['start']}~{period['end']}, {period['days']}个交易日)")
-    print(f"   各策略独立10万基数 | 持仓≤5 | 资金不共用 | 单票建仓20%")
+    print(f"   持仓≤{max_pos} | 单票{pct*100:.0f}% | 止损{stop}%")
     print(f"{'='*96}")
     print(f"{'策略':<12} {'终值':>11} {'收益':>7} {'胜率':>5} {'盈亏比':>5} "
           f"{'买入':>5} {'仓位':>5} {'月化':>6}")
@@ -280,15 +308,20 @@ def main():
         add_label = f'强者恒强 +{bt_cfg.get("add_trigger_pct", 10):.0f}%加仓市值{add_r * 100:.0f}%'
     else:
         add_label = '不加仓'
-    trend_pct = bt_cfg.get('trend_buy_amount_pct', 0.1)
-    print(f'🚀 独立策略回测 | 各策略10万 | 持仓≤5 | 单票建仓20% | 资金不共用')
-    target_ret = config.get('targets', {}).get('target_return_pct', 50)
-    print(f'   趋势: 涨幅5-10% Top5热门板块 止损3% 拖尾15%/6% | 涨停: 30日首板+量能3倍 池3000')
+    initial = bt_cfg.get('initial_capital', 200000)
+    max_pos = config.get('portfolio', {}).get('max_positions', 10)
+    trend_pct = bt_cfg.get('trend_buy_amount_pct', bt_cfg.get('buy_amount_pct', 0.1))
+    stop_loss = config.get('strategy', {}).get('stop_loss', 15)
+    min_vr = config.get('strategy', {}).get('min_volume_ratio', 1.2)
+    max_vr = config.get('strategy', {}).get('max_volume_ratio', 0)
+    vr_label = f'量比{min_vr}-{max_vr}' if max_vr else f'量比≥{min_vr}'
+    print(f'🚀 资金回测 | 初始{initial:,.0f} | 持仓≤{max_pos} | 单票{trend_pct*100:.0f}% | 止损{stop_loss}%')
+    print(f'   趋势: {max_pos}只×{trend_pct*100:.0f}% | 止损{stop_loss}% 拖尾15%/6% | 震仓方案A | 买入{vr_label}')
     print('=' * 88)
     bt_cfg.setdefault('add_trigger_pct', 10.0)
     bt_cfg.setdefault('add_ratio', 0.30)
     bt_cfg.setdefault('compound_buy', True)
-    bt_cfg.setdefault('max_buy_pct', 0.15)
+    bt_cfg.setdefault('max_buy_pct', bt_cfg.get('max_buy_pct', 0.05))
     bt_cfg.setdefault('ml_scale_buy', True)
     bt_cfg.setdefault('pool_size', 500)
     bt_cfg.setdefault('use_ml', True)
@@ -296,8 +329,9 @@ def main():
     bt_cfg.setdefault('commission', 0.15)
     bt_cfg.setdefault('stamp_tax', 0.1)
 
+    variants = backtest_variants_for_config(config)
     max_pool = bt_cfg['pool_size']
-    for v in STRATEGY_VARIANTS.values():
+    for v in variants.values():
         max_pool = max(max_pool, v.get('_pool_size', 0))
     pool = get_screening_pool(config, max_pool)
     print(f'\n📥 加载 {len(pool)} 只股票...')
@@ -333,10 +367,15 @@ def main():
             ml_scorer.precompute(ml_data, trading_days, persist=use_ml_cache)
 
     print(f"\n📅 回测: {period['start']} ~ {period['end']} ({period['days']}天)")
-    print(f"   策略: {', '.join(STRATEGY_VARIANTS.keys())}")
+    print(f"   策略: {', '.join(variants.keys())}")
+    if config.get('limit_up', {}).get('enabled'):
+        lu = config.get('limit_up', {})
+        print(f"   首板: 启用 | 量比≥{lu.get('min_volume_ratio', 3)} | "
+              f"每日≤{lu.get('max_daily_picks', 1)}只 | "
+              f"lookback {lu.get('lookback_days', 30)}日")
 
     results = []
-    for name, variant in STRATEGY_VARIANTS.items():
+    for name, variant in variants.items():
         print(f'  ⏳ {name}...', flush=True)
         result = run_variant(name, variant, all_data, ml_data, trading_days,
                              config, bt_cfg, ml_scorer)
@@ -345,7 +384,7 @@ def main():
               f'买入{s.get("buy_count", 0)}笔', flush=True)
         results.append(result)
 
-    best = print_comparison(results, period, bt_cfg)
+    best = print_comparison(results, period, bt_cfg, config)
 
     os.makedirs('data', exist_ok=True)
     output = {
@@ -366,6 +405,8 @@ def main():
                 'daily_log': r['daily_log'],
                 'regime_log': r.get('regime_log', []),
                 'hot_sector_stats': analyze_hot_sectors(r.get('regime_log', [])),
+                'volume_ratio_stats': analyze_trade_volume_stats(r['trades'], all_data),
+                'buy_entry_stats': analyze_buy_entry_stats(r['trades'], all_data),
                 'trades': r['trades'],
             }
             for r in results
@@ -373,7 +414,7 @@ def main():
     }
     path = 'data/backtest_capital_results.json'
     with open(path, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+        json.dump(_json_sanitize(output), f, ensure_ascii=False, indent=2)
     print(f'\n💾 结果: {path}')
     print(f'📊 可视化: python serve_dashboard.py → http://localhost:8088/backtest_viz.html')
 

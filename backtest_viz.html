@@ -6,6 +6,7 @@
 <title>回测可视化</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -58,6 +59,22 @@ tr:hover td{background:rgba(255,255,255,0.03)}
 .banner.error{background:rgba(248,81,73,0.15);border:1px solid var(--red);color:var(--red)}
 .banner.loading{background:rgba(88,166,255,0.1);border:1px solid var(--blue);color:var(--blue)}
 .banner.hidden{display:none}
+.trade-clickable{cursor:pointer}
+.trade-clickable:hover td{background:rgba(88,166,255,0.08)!important}
+.trade-clickable .code-cell{color:var(--blue);text-decoration:underline;text-decoration-color:rgba(88,166,255,0.4)}
+.kline-modal{position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px}
+.kline-modal.hidden{display:none}
+.kline-panel{background:#161b22;border:1px solid var(--border);border-radius:10px;width:min(960px,100%);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.45)}
+.kline-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);gap:12px}
+.kline-header h3{font-size:0.95rem;font-weight:600}
+.kline-header-meta{font-size:0.75rem;color:var(--muted)}
+.kline-close{background:none;border:1px solid var(--border);color:var(--muted);width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+.kline-close:hover{color:var(--text);border-color:var(--blue)}
+.kline-body{padding:12px 16px 16px;flex:1;min-height:0}
+#klineChartContainer{height:420px;width:100%}
+.kline-legend{display:flex;gap:16px;font-size:0.72rem;color:var(--muted);padding:0 16px 12px;flex-wrap:wrap}
+.kline-legend span{display:flex;align-items:center;gap:6px}
+.kline-dot{width:8px;height:8px;border-radius:50%}
 </style>
 </head>
 <body>
@@ -134,13 +151,13 @@ tr:hover td{background:rgba(255,255,255,0.03)}
   <div class="section" id="hotSectorDailySection" style="display:none">
     <div class="section-header">
       <h2>每日热门板块记录</h2>
-      <span class="task-status">Top5 板块 + 预筛池数量</span>
+      <span class="task-status">热门板块 + 预筛池数量</span>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>日期</th><th>预筛池</th><th>Top5 热门板块</th><th>板块涨跌幅</th><th>各板块股票数</th>
+            <th>日期</th><th>预筛池</th><th>热门板块</th><th>板块涨跌幅</th><th>各板块股票数</th>
           </tr>
         </thead>
         <tbody id="hotSectorDailyTable"></tbody>
@@ -148,14 +165,143 @@ tr:hover td{background:rgba(255,255,255,0.03)}
     </div>
   </div>
 
+  <div class="section" id="volumeRatioStatsSection" style="display:none">
+    <div class="section-header">
+      <h2>量比统计 · 大赢单（≥20%）</h2>
+      <span id="bigWinVrHint" class="task-status"></span>
+    </div>
+    <div style="padding:12px 20px 0;font-size:0.8rem;color:var(--muted)">买入当日量比</div>
+    <div class="summary" id="bigWinVrSummary" style="padding:16px 20px;margin:0;border:none;background:transparent"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>量比区间</th><th>笔数</th><th>占比</th><th>均盈亏%</th></tr>
+        </thead>
+        <tbody id="bigWinVrDistTable"></tbody>
+      </table>
+    </div>
+    <div style="padding:12px 20px 0;font-size:0.8rem;color:var(--muted)">买入前三日量比（T-3 / T-2 / T-1，不含买入日）</div>
+    <div class="summary" id="bigWinPreVrSummary" style="padding:16px 20px;margin:0;border:none;background:transparent"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>前3日均量比区间</th><th>笔数</th><th>占比</th><th>均盈亏%</th></tr>
+        </thead>
+        <tbody id="bigWinPreVrDistTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr><th>代码</th><th>买入日</th><th>卖出日</th><th>买入日量比</th><th>T-3</th><th>T-2</th><th>T-1</th><th>前3日均</th><th>盈亏%</th><th>评分</th></tr>
+        </thead>
+        <tbody id="bigWinVrTopTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section" id="lossVrStatsSection" style="display:none">
+    <div class="section-header">
+      <h2>量比统计 · 亏损单</h2>
+      <span id="lossVrHint" class="task-status"></span>
+    </div>
+    <div style="padding:12px 20px 0;font-size:0.8rem;color:var(--muted)">买入当日量比</div>
+    <div class="summary" id="lossVrSummary" style="padding:16px 20px;margin:0;border:none;background:transparent"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>量比区间</th><th>笔数</th><th>占比</th><th>均盈亏%</th></tr>
+        </thead>
+        <tbody id="lossVrDistTable"></tbody>
+      </table>
+    </div>
+    <div style="padding:12px 20px 0;font-size:0.8rem;color:var(--muted)">买入前三日量比（T-3 / T-2 / T-1）</div>
+    <div class="summary" id="lossPreVrSummary" style="padding:16px 20px;margin:0;border:none;background:transparent"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>前3日均量比区间</th><th>笔数</th><th>占比</th><th>均盈亏%</th></tr>
+        </thead>
+        <tbody id="lossPreVrDistTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr><th>亏损幅度</th><th>笔数</th><th>买入日量比</th><th>前3日均量比</th></tr>
+        </thead>
+        <tbody id="lossVrMagTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr><th>卖出原因</th><th>笔数</th><th>买入日量比</th><th>前3日均量比</th><th>均亏损%</th></tr>
+        </thead>
+        <tbody id="lossVrReasonTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr><th>代码</th><th>买入日</th><th>买入日量比</th><th>T-3</th><th>T-2</th><th>T-1</th><th>前3日均</th><th>盈亏%</th><th>评分</th></tr>
+        </thead>
+        <tbody id="lossVrWorstTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section" id="buyEntryStatsSection" style="display:none">
+    <div class="section-header">
+      <h2>买入当日条件统计</h2>
+      <div class="filter-btns" id="buyEntryGroupBtns">
+        <button class="filter-btn active" data-group="all_buys">全部买入</button>
+        <button class="filter-btn" data-group="big_wins">大赢≥20%</button>
+        <button class="filter-btn" data-group="losses">亏损</button>
+        <button class="filter-btn" data-group="small_wins">小赢</button>
+      </div>
+    </div>
+    <div id="buyEntryHint" class="task-status" style="padding:12px 20px 0"></div>
+    <div class="table-wrap" style="padding-top:12px">
+      <table>
+        <thead>
+          <tr><th>指标</th><th>样本</th><th>均值</th><th>中位</th><th>最小</th><th>最大</th><th>P25</th><th>P75</th></tr>
+        </thead>
+        <tbody id="buyEntryFieldsTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr><th>条件</th><th>达标笔数</th><th>样本</th><th>达标率</th></tr>
+        </thead>
+        <tbody id="buyEntryFlagsTable"></tbody>
+      </table>
+    </div>
+    <div class="table-wrap" style="border-top:1px solid var(--border)">
+      <table>
+        <thead>
+          <tr>
+            <th>日期</th><th>代码</th><th>类型</th><th>盈亏%</th><th>涨幅</th><th>昨涨</th>
+            <th>RSI</th><th>量比</th><th>技术分</th><th>综合分</th><th>ML</th><th>收盘强度</th>
+          </tr>
+        </thead>
+        <tbody id="buyEntrySamplesTable"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="section">
     <div class="section-header">
       <h2>交易明细</h2>
-      <div class="filter-btns">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="task-status">点击代码查看买入后30日K线</span>
+        <div class="filter-btns">
         <button class="filter-btn active" data-filter="all">全部</button>
         <button class="filter-btn" data-filter="buy">买入</button>
         <button class="filter-btn" data-filter="sell">卖出</button>
         <button class="filter-btn" data-filter="add">加仓</button>
+        </div>
       </div>
     </div>
     <div class="table-wrap">
@@ -172,11 +318,35 @@ tr:hover td{background:rgba(255,255,255,0.03)}
   </div>
 </div>
 
+<div id="klineModal" class="kline-modal hidden" role="dialog" aria-modal="true">
+  <div class="kline-panel">
+    <div class="kline-header">
+      <div>
+        <h3 id="klineTitle">K线</h3>
+        <div id="klineMeta" class="kline-header-meta"></div>
+      </div>
+      <button type="button" class="kline-close" id="klineClose" title="关闭">×</button>
+    </div>
+    <div class="kline-legend">
+      <span><span class="kline-dot" style="background:var(--red)"></span>阳线/上涨</span>
+      <span><span class="kline-dot" style="background:var(--green)"></span>阴线/下跌</span>
+      <span><span class="kline-dot" style="background:var(--red)"></span>▲ 买入</span>
+      <span><span class="kline-dot" style="background:var(--green)"></span>▼ 卖出</span>
+    </div>
+    <div class="kline-body">
+      <div id="klineChartContainer"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const charts = {};
 let allData = null;
 let currentVariant = null;
 let tradeFilter = 'all';
+let currentTrades = [];
+let klineChart = null;
+let klineSeries = null;
 
 const fmt = n => n == null ? '-' : Number(n).toLocaleString('zh-CN', {maximumFractionDigits: 2});
 const fmtPct = n => n == null ? '-' : (n >= 0 ? '+' : '') + Number(n).toFixed(2) + '%';
@@ -571,7 +741,314 @@ function renderHotSectorStats(stats) {
   }).join('');
 }
 
+function renderPreBuyVrSummary(el, pre) {
+  if (!pre || !pre.sample_count) {
+    el.innerHTML = '';
+    return;
+  }
+  const days = [
+    ['t_minus_3', 'T-3'],
+    ['t_minus_2', 'T-2'],
+    ['t_minus_1', 'T-1'],
+    ['avg_3d', '前3日均', 'gold'],
+  ];
+  el.innerHTML = days.map(([k, label, cls]) => {
+    const s = pre[k] || {};
+    const mean = s.mean != null ? s.mean : '-';
+  return `<div class="card"><div class="label">${label}</div><div class="value ${cls || 'blue'}">${mean}</div><div class="label" style="margin-top:4px">中位 ${s.median != null ? s.median : '-'}</div></div>`;
+  }).join('');
+}
+
+function renderVolumeRatioStats(vrStats) {
+  const bigSec = document.getElementById('volumeRatioStatsSection');
+  const lossSec = document.getElementById('lossVrStatsSection');
+  if (!vrStats || (!vrStats.big_wins && !vrStats.losses)) {
+    bigSec.style.display = 'none';
+    lossSec.style.display = 'none';
+    return;
+  }
+
+  const renderSummaryCards = (el, summary, labels) => {
+    if (!summary || !summary.count) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = labels.map(([k, label, cls]) =>
+      `<div class="card"><div class="label">${label}</div><div class="value ${cls || ''}">${summary[k]}</div></div>`
+    ).join('');
+  };
+
+  const fmtPre = p => p ? `${p.t_minus_3 ?? '-'} / ${p.t_minus_2 ?? '-'} / ${p.t_minus_1 ?? '-'}` : '-';
+
+  const big = vrStats.big_wins || {};
+  if (big.sell_count > 0 || big.unique_position_count > 0) {
+    bigSec.style.display = '';
+    document.getElementById('bigWinVrHint').textContent =
+      `卖出${big.sell_count || 0}笔 / 独立仓位${big.unique_position_count || 0}个`;
+    const us = big.unique_summary || big.summary || {};
+    renderSummaryCards(document.getElementById('bigWinVrSummary'), us, [
+      ['count', '样本数', 'gold'],
+      ['mean', '量比均值', 'blue'],
+      ['median', '量比中位', 'blue'],
+      ['min', '最小', ''],
+      ['max', '最大', ''],
+    ]);
+    renderPreBuyVrSummary(document.getElementById('bigWinPreVrSummary'), big.pre_buy_3d_unique || big.pre_buy_3d);
+    document.getElementById('bigWinVrDistTable').innerHTML = (big.distribution || []).map(d =>
+      `<tr><td>${d.label}</td><td>${d.count}</td><td>${d.pct}%</td><td class="${d.avg_profit_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(d.avg_profit_pct)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('bigWinPreVrDistTable').innerHTML = (big.pre_buy_avg_distribution || []).map(d =>
+      `<tr><td>${d.label}</td><td>${d.count}</td><td>${d.pct}%</td><td class="pos">${fmtPct(d.avg_profit_pct)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('bigWinVrTopTable').innerHTML = (big.top_profit || []).map(r =>
+      `<tr><td>${r.code}</td><td>${r.buy_date}</td><td>${r.sell_date}</td><td class="blue">${r.volume_ratio}</td>
+       <td>${r.pre_buy_vr?.t_minus_3 ?? '-'}</td><td>${r.pre_buy_vr?.t_minus_2 ?? '-'}</td><td>${r.pre_buy_vr?.t_minus_1 ?? '-'}</td>
+       <td class="gold">${r.pre_buy_avg ?? '-'}</td>
+       <td class="pos">${fmtPct(r.profit_pct)}</td><td>${r.score != null ? r.score : '-'}</td></tr>`
+    ).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+  } else {
+    bigSec.style.display = 'none';
+  }
+
+  const loss = vrStats.losses || {};
+  if (loss.sell_count > 0) {
+    lossSec.style.display = '';
+    document.getElementById('lossVrHint').textContent = `亏损卖出 ${loss.sell_count} 笔`;
+    renderSummaryCards(document.getElementById('lossVrSummary'), loss.summary || {}, [
+      ['count', '样本数', ''],
+      ['mean', '量比均值', 'blue'],
+      ['median', '量比中位', 'blue'],
+      ['min', '最小', ''],
+      ['max', '最大', ''],
+    ]);
+    renderPreBuyVrSummary(document.getElementById('lossPreVrSummary'), loss.pre_buy_3d);
+    document.getElementById('lossVrDistTable').innerHTML = (loss.distribution || []).map(d =>
+      `<tr><td>${d.label}</td><td>${d.count}</td><td>${d.pct}%</td><td class="neg">${fmtPct(d.avg_profit_pct)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('lossPreVrDistTable').innerHTML = (loss.pre_buy_avg_distribution || []).map(d =>
+      `<tr><td>${d.label}</td><td>${d.count}</td><td>${d.pct}%</td><td class="neg">${fmtPct(d.avg_profit_pct)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('lossVrMagTable').innerHTML = (loss.by_loss_magnitude || []).map(d =>
+      `<tr><td>${d.label}</td><td>${d.count}</td><td>${d.vr_mean}</td><td>${d.pre_buy_avg_mean ?? '-'}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('lossVrReasonTable').innerHTML = (loss.by_sell_reason || []).map(d =>
+      `<tr><td>${d.reason}</td><td>${d.count}</td><td>${d.vr_mean}</td><td>${d.pre_buy_avg_mean ?? '-'}</td><td class="neg">${fmtPct(d.avg_loss_pct)}</td></tr>`
+    ).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+    document.getElementById('lossVrWorstTable').innerHTML = (loss.worst_losses || []).map(r =>
+      `<tr><td>${r.code}</td><td>${r.buy_date}</td><td class="blue">${r.volume_ratio}</td>
+       <td>${r.pre_buy_vr?.t_minus_3 ?? '-'}</td><td>${r.pre_buy_vr?.t_minus_2 ?? '-'}</td><td>${r.pre_buy_vr?.t_minus_1 ?? '-'}</td>
+       <td class="gold">${r.pre_buy_avg ?? '-'}</td>
+       <td class="neg">${fmtPct(r.profit_pct)}</td><td>${r.score != null ? r.score : '-'}</td></tr>`
+    ).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+  } else {
+    lossSec.style.display = 'none';
+  }
+}
+
+let buyEntryGroup = 'all_buys';
+let buyEntryStatsCache = null;
+
+function renderBuyEntryStats(stats) {
+  const sec = document.getElementById('buyEntryStatsSection');
+  buyEntryStatsCache = stats;
+  if (!stats || !stats.outcome_counts) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = '';
+  const oc = stats.outcome_counts;
+  document.getElementById('buyEntryHint').textContent =
+    `共${oc.total}笔买入 | 大赢${oc.big_win} | 小赢${oc.small_win} | 亏损${oc.loss} | 未平仓${oc.open}`;
+  document.querySelectorAll('#buyEntryGroupBtns .filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.group === buyEntryGroup);
+    btn.onclick = () => {
+      buyEntryGroup = btn.dataset.group;
+      renderBuyEntryStats(buyEntryStatsCache);
+    };
+  });
+  const group = stats[buyEntryGroup] || stats.all_buys || {};
+  const fieldsBody = document.getElementById('buyEntryFieldsTable');
+  const fieldRows = Object.entries(group.fields || {});
+  fieldsBody.innerHTML = fieldRows.length ? fieldRows.map(([k, f]) => {
+    const s = f.summary || {};
+    return `<tr><td>${f.label || k}</td><td>${s.count ?? '-'}</td><td class="blue">${s.mean ?? '-'}</td>
+      <td>${s.median ?? '-'}</td><td>${s.min ?? '-'}</td><td>${s.max ?? '-'}</td>
+      <td>${s.p25 ?? '-'}</td><td>${s.p75 ?? '-'}</td></tr>`;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+
+  const flagsBody = document.getElementById('buyEntryFlagsTable');
+  const flagRows = Object.entries(group.flags || {});
+  flagsBody.innerHTML = flagRows.length ? flagRows.map(([k, f]) =>
+    `<tr><td>${f.label || k}</td><td>${f.true_count}</td><td>${f.sample_count}</td><td>${f.true_pct}%</td></tr>`
+  ).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+
+  const outcomeFilter = buyEntryGroup === 'all_buys' ? null
+    : buyEntryGroup === 'big_wins' ? 'big_win'
+    : buyEntryGroup === 'losses' ? 'loss'
+    : buyEntryGroup === 'small_wins' ? 'small_win' : null;
+  const samples = (stats.samples || []).filter(s => !outcomeFilter || s.outcome === outcomeFilter);
+  document.getElementById('buyEntrySamplesTable').innerHTML = samples.length ? samples.map(s => {
+    const oc = s.outcome === 'big_win' ? 'pos' : s.outcome === 'loss' ? 'neg' : '';
+    return `<tr>
+      <td>${s.buy_date}</td><td>${s.code}</td><td>${s.reason || s.outcome}</td>
+      <td class="${oc}">${s.profit_pct != null ? fmtPct(s.profit_pct) : '-'}</td>
+      <td>${s.change ?? '-'}</td><td>${s.prev_change ?? '-'}</td>
+      <td>${s.rsi ?? '-'}</td><td class="blue">${s.volume_ratio ?? '-'}</td>
+      <td>${s.tech_score ?? '-'}</td><td>${s.score ?? '-'}</td>
+      <td>${s.ml_score != null ? Number(s.ml_score).toFixed(3) : '-'}</td>
+      <td>${s.close_strength ?? '-'}</td></tr>`;
+  }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--muted)">无数据</td></tr>';
+}
+
+function findBuyAnchor(trade, trades) {
+  if (trade.action === 'buy' || trade.action === 'add' || trade.action === 'dip_refill') {
+    return { date: trade.date, price: trade.price, action: trade.action };
+  }
+  const same = trades.filter(t => t.code === trade.code && t.date <= trade.date);
+  let lastBuy = null;
+  for (const t of same) {
+    if (t.action === 'buy' || t.action === 'add' || t.action === 'dip_refill') lastBuy = t;
+  }
+  return lastBuy ? { date: lastBuy.date, price: lastBuy.price, action: lastBuy.action } : null;
+}
+
+function destroyKlineChart() {
+  if (klineChart) {
+    klineChart.remove();
+    klineChart = null;
+    klineSeries = null;
+  }
+  const el = document.getElementById('klineChartContainer');
+  if (el) el.innerHTML = '';
+}
+
+function closeKlineModal() {
+  document.getElementById('klineModal').classList.add('hidden');
+  destroyKlineChart();
+}
+
+function renderKlineChart(data, anchor, trades) {
+  destroyKlineChart();
+  const container = document.getElementById('klineChartContainer');
+  if (!window.LightweightCharts) {
+    container.innerHTML = '<div class="empty">K线库加载失败，请刷新页面</div>';
+    return;
+  }
+  klineChart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { color: '#161b22' },
+      textColor: '#8b949e',
+    },
+    grid: {
+      vertLines: { color: 'rgba(48,54,61,0.5)' },
+      horzLines: { color: 'rgba(48,54,61,0.5)' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: 'rgba(48,54,61,0.8)' },
+    timeScale: { borderColor: 'rgba(48,54,61,0.8)', timeVisible: true },
+    width: container.clientWidth,
+    height: 400,
+  });
+  klineSeries = klineChart.addCandlestickSeries({
+    upColor: '#f85149',
+    downColor: '#3fb950',
+    borderUpColor: '#f85149',
+    borderDownColor: '#3fb950',
+    wickUpColor: '#f85149',
+    wickDownColor: '#3fb950',
+  });
+  const candles = data.bars.map(b => ({
+    time: b.date,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+  }));
+  klineSeries.setData(candles);
+  const barDates = new Set(data.bars.map(b => b.date));
+  const endDate = data.bars[data.bars.length - 1]?.date;
+  const markers = [];
+  const buyTime = barDates.has(anchor.date) ? anchor.date : data.bars[0]?.date;
+  if (buyTime) {
+    markers.push({
+      time: buyTime,
+      position: 'belowBar',
+      color: '#f85149',
+      shape: 'arrowUp',
+      text: anchor.action === 'add' ? '加仓' : '买',
+    });
+  }
+  trades.filter(t =>
+    t.code === data.code && t.action === 'sell' &&
+    t.date >= anchor.date && t.date <= endDate && barDates.has(t.date)
+  ).forEach(t => {
+    markers.push({
+      time: t.date,
+      position: 'aboveBar',
+      color: '#3fb950',
+      shape: 'arrowDown',
+      text: '卖',
+    });
+  });
+  if (markers.length) klineSeries.setMarkers(markers);
+  klineChart.timeScale().fitContent();
+  new ResizeObserver(() => {
+    if (klineChart && container) klineChart.applyOptions({ width: container.clientWidth });
+  }).observe(container);
+}
+
+async function showTradeKline(trade) {
+  const anchor = findBuyAnchor(trade, currentTrades);
+  if (!anchor) {
+    setBanner('未找到该笔交易对应的买入/加仓记录', 'error');
+    setTimeout(() => setBanner('', ''), 4000);
+    return;
+  }
+  const modal = document.getElementById('klineModal');
+  modal.classList.remove('hidden');
+  const name = trade.name || '';
+  document.getElementById('klineTitle').textContent =
+    `${trade.code}${name ? ' ' + name : ''} · 买入后30个交易日`;
+  document.getElementById('klineMeta').textContent =
+    `买入日 ${anchor.date} · 买入价 ¥${anchor.price ?? '-'} · 加载中...`;
+  destroyKlineChart();
+  document.getElementById('klineChartContainer').innerHTML =
+    '<div class="empty" style="padding:40px">正在加载 K 线...</div>';
+    try {
+    const url = `/api/kline?code=${encodeURIComponent(trade.code)}&start=${encodeURIComponent(anchor.date)}&days=30`;
+    const res = await fetch(url);
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (parseErr) {
+      const hint = res.status === 404
+        ? '请 Ctrl+C 停止后重新运行 python serve_dashboard.py（需新版 API）'
+        : '服务返回非 JSON';
+      throw new Error(hint + (text ? `: ${text.slice(0, 80)}` : ''));
+    }
+    if (!data) {
+      throw new Error('K线接口返回空响应');
+    }
+    if (!data.ok || !data.bars?.length) {
+      document.getElementById('klineChartContainer').innerHTML =
+        `<div class="empty" style="padding:40px">${data.error || '无K线数据'}</div>`;
+      document.getElementById('klineMeta').textContent = `买入日 ${anchor.date} · 加载失败`;
+      return;
+    }
+    const last = data.bars[data.bars.length - 1];
+    const ret = ((last.close / data.bars[0].open - 1) * 100).toFixed(2);
+    document.getElementById('klineMeta').textContent =
+      `买入日 ${anchor.date} · 买入价 ¥${anchor.price ?? '-'} · ${data.bar_count}根K线 · 区间涨跌 ${ret}%`;
+    renderKlineChart(data, anchor, currentTrades);
+  } catch (e) {
+    document.getElementById('klineChartContainer').innerHTML =
+      `<div class="empty" style="padding:40px">加载失败: ${e.message}</div>`;
+  }
+}
+
 function renderTradeTable(trades) {
+  currentTrades = trades || [];
   const filtered = tradeFilter === 'all' ? trades : trades.filter(t => t.action === tradeFilter);
   const tbody = document.getElementById('tradeTable');
   if (!filtered.length) {
@@ -580,13 +1057,13 @@ function renderTradeTable(trades) {
   }
   const actionCls = { buy: 'tag-buy', sell: 'tag-sell', add: 'tag-add', dip_refill: 'tag-add' };
   const actionLabel = { buy: '买入', sell: '卖出', add: '加仓', dip_refill: '补半仓' };
-  tbody.innerHTML = filtered.map(t => {
+  tbody.innerHTML = filtered.map((t, idx) => {
     const profitCls = t.profit > 0 ? 'pos' : t.profit < 0 ? 'neg' : '';
     const ratio = t.shares_ratio != null ? `${Math.round(t.shares_ratio * 100)}%` : '-';
-    return `<tr>
+    return `<tr class="trade-clickable" data-trade-idx="${idx}" title="点击查看买入后K线">
       <td>${t.date}</td>
       <td class="${actionCls[t.action] || ''}">${actionLabel[t.action] || t.action}</td>
-      <td>${t.code}</td>
+      <td class="code-cell">${t.code}</td>
       <td>${t.price != null ? '¥' + t.price : '-'}</td>
       <td>${t.amount != null ? '¥' + fmt(t.amount) : '-'}</td>
       <td>${ratio}</td>
@@ -595,6 +1072,13 @@ function renderTradeTable(trades) {
       <td style="color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis">${t.reason || '-'}</td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('.trade-clickable').forEach(row => {
+    row.onclick = () => {
+      const i = Number(row.dataset.tradeIdx);
+      const t = filtered[i];
+      if (t) showTradeKline(t);
+    };
+  });
 }
 
 function setBanner(msg, type) {
@@ -630,6 +1114,8 @@ function renderVariant(name) {
     try { renderUtilChart(daily, util); } catch (e) { console.error('utilChart', e); }
   }
   renderTradeTable(trades);
+  renderVolumeRatioStats(v.volume_ratio_stats);
+  renderBuyEntryStats(v.buy_entry_stats);
   const stats = v.hot_sector_stats || computeHotSectorStatsClient(v.regime_log);
   renderHotSectorStats(stats);
   if (!stats && (!v.regime_log || !v.regime_log.length)) {
@@ -771,6 +1257,13 @@ function pollTask(onDone) {
 
 document.getElementById('btnBacktest').addEventListener('click', runBacktest);
 document.getElementById('btnReload').addEventListener('click', loadData);
+document.getElementById('klineClose').addEventListener('click', closeKlineModal);
+document.getElementById('klineModal').addEventListener('click', e => {
+  if (e.target.id === 'klineModal') closeKlineModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeKlineModal();
+});
 
 if (typeof Chart === 'undefined') {
   showEmpty('Chart.js 未加载', '请检查网络能否访问 cdn.jsdelivr.net，或刷新页面重试');

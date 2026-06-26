@@ -5,7 +5,7 @@
 规则:
   - 初始资金 10万，每次新建仓买入 1万
   - 强者恒强：盈利每上涨 add_trigger_pct% 加仓 add_ratio（按当前市值，每档仅加一次）
-  - 止盈止损策略不变（阶梯止盈 + 移动止盈 + 止损）
+  - 止盈止损：移动止盈 + 止损（阶梯止盈由 take_profit_levels 配置，默认关闭）
 """
 
 from dataclasses import dataclass, field
@@ -109,6 +109,7 @@ class CapitalBacktester:
         self._sector_map: Dict[str, str] = {}
         self._regime_log: List[Dict] = []
         self._shakeout_watch: Dict[str, Dict] = {}
+        self._stop_cooldown: Dict[str, int] = {}
 
     def _count_trend_positions(self) -> int:
         return sum(1 for p in self.positions.values() if not p.shakeout_rebuy)
@@ -129,6 +130,37 @@ class CapitalBacktester:
         if pct <= 0:
             return 0.0
         return self._equity(all_data, date) * pct / 100
+
+    @staticmethod
+    def _entry_snapshot(cand: dict) -> dict:
+        sig = cand.get('signals') or {}
+        def _n(v, nd=2):
+            if v is None:
+                return None
+            try:
+                return round(float(v), nd)
+            except (TypeError, ValueError):
+                return v
+        def _b(v):
+            return bool(v) if v is not None else None
+        def _i(v):
+            return int(v) if v is not None else None
+        return {
+            'change': _n(cand.get('change')),
+            'tech_score': _n(cand.get('tech_score')),
+            'rsi': _n(cand.get('rsi') or sig.get('rsi')),
+            'volume_ratio': _n(cand.get('volume_ratio') or sig.get('volume_ratio')),
+            'score': _n(cand.get('score')),
+            'ml_score': _n(cand.get('ml_score'), 4),
+            'close_strength': _n(sig.get('close_strength')),
+            'conditions_met': _i(sig.get('conditions_met')),
+            'rsi_ok': _b(sig.get('rsi_ok')),
+            'macd_ok': _b(sig.get('macd_ok')),
+            'macd_golden': _b(sig.get('macd_golden')),
+            'volume_ok': _b(sig.get('volume_ok')),
+            'ma_ok': _b(sig.get('ma_ok')),
+            'bullish_candle': _b(sig.get('bullish_candle')),
+        }
 
     def _calc_buy_amount(self, all_data: Dict, date: str, ml_score: float = 0.5,
                          strategy_type: str = 'trend', is_new_position: bool = True,
@@ -180,11 +212,7 @@ class CapitalBacktester:
                 {'level': i + 1, 'pct': lv['pct'], 'ratio': lv['ratio'], 'triggered': False}
                 for i, lv in enumerate(tpl)
             ]
-        return [
-            {'level': 1, 'pct': 5.0, 'ratio': 0.3, 'triggered': False},
-            {'level': 2, 'pct': 10.0, 'ratio': 0.3, 'triggered': False},
-            {'level': 3, 'pct': 15.0, 'ratio': 0.4, 'triggered': False},
-        ]
+        return []
 
     def _exit_params(self, strategy_type: str) -> Dict:
         if strategy_type == 'limit_up':
@@ -372,10 +400,27 @@ class CapitalBacktester:
         self._shakeout_watch[code] = {
             'code': code,
             'sell_date': date,
+            'sell_idx': day_idx,
             'sell_price': sell_price,
             'cost_price': cost,
             'expire_idx': day_idx + int(cfg['shakeout_rebuy_days']),
         }
+
+    def _register_stop_cooldown(self, code: str, date: str, strat_cfg: dict,
+                               shakeout_rebuy: bool = False):
+        if shakeout_rebuy:
+            return
+        days = int(strat_cfg.get('stop_cooldown_days', 0))
+        if days <= 0:
+            return
+        day_idx = self._day_index.get(date, -1)
+        if day_idx < 0:
+            return
+        self._stop_cooldown[code] = day_idx + days
+
+    def _in_stop_cooldown(self, code: str, day_idx: int) -> bool:
+        end = self._stop_cooldown.get(code)
+        return end is not None and day_idx <= end
 
     def _shakeout_rebuy_candidates(self, all_data: Dict, date: str, day_idx: int,
                                    held: set, strat_cfg: dict) -> List[Dict]:
@@ -389,6 +434,12 @@ class CapitalBacktester:
             if day_idx > watch['expire_idx']:
                 del self._shakeout_watch[code]
                 continue
+            max_from_stop = int(cfg.get('shakeout_rebuy_max_days_from_stop', 0))
+            if max_from_stop > 0:
+                sell_idx = watch.get('sell_idx', self._day_index.get(watch['sell_date'], -1))
+                if sell_idx < 0 or day_idx - sell_idx > max_from_stop:
+                    del self._shakeout_watch[code]
+                    continue
             if code in held:
                 continue
             df = all_data.get(code)
@@ -404,6 +455,13 @@ class CapitalBacktester:
                 watch, row, hist, strat_cfg, regime=self._current_regime,
             )
             if rebuy:
+                if cfg.get('shakeout_rebuy_require_hot_sector') and strat_cfg.get('require_hot_sector'):
+                    from src.market_regime import get_hot_sector_pool_names, codes_in_hot_sectors
+                    hot_names = get_hot_sector_pool_names(self._current_regime, strat_cfg)
+                    if hot_names:
+                        allowed = codes_in_hot_sectors(self._sector_map, hot_names)
+                        if code not in allowed:
+                            continue
                 rebuy['buy_date'] = date
                 cands.append(rebuy)
         cands.sort(key=lambda x: x.get('score', 0), reverse=True)
@@ -514,9 +572,11 @@ class CapitalBacktester:
             cost = pos.avg_cost
             stype = pos.strategy_type
             reason = f'止损({pos.profit_pct(stop_price):.1f}%)'
+            shakeout_flag = pos.shakeout_rebuy
             self._sell(code, stop_price, 1.0, date, reason)
             if should_watch_after_stop(reason, stype, 1.0, strat_cfg):
                 self._register_shakeout_watch(code, stop_price, cost, date, strat_cfg)
+            self._register_stop_cooldown(code, date, strat_cfg, shakeout_rebuy=shakeout_flag)
             return
 
         if self._check_trend_dip_refill(pos, close, date, strat_cfg):
@@ -641,6 +701,7 @@ class CapitalBacktester:
         use_market = strat_cfg.get('market_min_score', 0) > 0
         self._regime_log = []
         self._shakeout_watch = {}
+        self._stop_cooldown = {}
         self._day_index = {d: i for i, d in enumerate(trading_days)}
         if not self._sector_map:
             try:
@@ -746,6 +807,7 @@ class CapitalBacktester:
                         'ml_score': cand.get('ml_score', 0),
                         'strategy_type': stype,
                         'doubler_boost': cand.get('doubler_boost', 0),
+                        'entry': self._entry_snapshot(cand),
                     })
 
             trend_count = self._count_trend_positions()
@@ -786,6 +848,7 @@ class CapitalBacktester:
                             'ml_score': cand.get('ml_score', 0),
                             'strategy_type': stype,
                             'doubler_boost': cand.get('doubler_boost', 0),
+                            'entry': self._entry_snapshot(cand),
                         })
 
             self._append_daily(all_data, date)
@@ -835,9 +898,10 @@ class CapitalBacktester:
                 ), flush=True)
 
         for code, df in all_data.items():
-            if allowed_codes is not None and code not in allowed_codes:
-                continue
             if code in held:
+                continue
+            day_idx = getattr(self, '_day_index', {}).get(date, 0)
+            if self._in_stop_cooldown(code, day_idx):
                 continue
             row = self._get_bar(all_data, code, date, forward_fill=False, flat_if_missing=False)
             if row is None:
@@ -856,16 +920,16 @@ class CapitalBacktester:
                     ml_proba = self.ml_scorer.score_at(ml_df, date, code=code)
 
             if 'trend' in active_set:
-                r = screen_stock_row(row, hist, strat_cfg, ml_proba=ml_proba)
-                if r:
-                    r['sector'] = self._sector_map.get(code, '其他')
-                    r = apply_doubler_boost(r, row, hist, db_cfg)
-                    r = apply_mainline_to_candidate(r, self._current_regime, strat_cfg)
-                    if r is None:
-                        continue
-                    r['buy_date'] = date
-                    r['strategy_type'] = 'trend'
-                    trend_cands.append(r)
+                if allowed_codes is None or code in allowed_codes:
+                    r = screen_stock_row(row, hist, strat_cfg, ml_proba=ml_proba)
+                    if r:
+                        r['sector'] = self._sector_map.get(code, '其他')
+                        r = apply_doubler_boost(r, row, hist, db_cfg)
+                        r = apply_mainline_to_candidate(r, self._current_regime, strat_cfg)
+                        if r is not None:
+                            r['buy_date'] = date
+                            r['strategy_type'] = 'trend'
+                            trend_cands.append(r)
 
             if 'limit_up' in active_set and lu_cfg.get('enabled', True):
                 if is_limit_up_bar(row, code):

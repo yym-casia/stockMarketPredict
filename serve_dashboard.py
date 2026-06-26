@@ -11,6 +11,7 @@ import sys
 import subprocess
 import threading
 import time
+import urllib.parse
 from datetime import datetime, time as dt_time
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -218,6 +219,51 @@ def run_intraday_alerts():
             time.sleep(CHECK_INTERVAL)
 
 
+def _parse_subprocess_json(stdout: str):
+    raw = (stdout or '').strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    for line in reversed(raw.splitlines()):
+        s = line.strip()
+        if s.startswith('{') and s.endswith('}'):
+            try:
+                return json.loads(s)
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def _fetch_kline_json(code: str, start_date: str, days: str = '30') -> dict:
+    """子进程拉 K 线，避免 Dashboard 主进程加载 akshare。"""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'trade_kline.py')
+    creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+    try:
+        result = subprocess.run(
+            [sys.executable, script, code, start_date, str(days)],
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            timeout=45,
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            creationflags=creationflags,
+        )
+        parsed = _parse_subprocess_json(result.stdout)
+        if parsed is not None:
+            return parsed
+        err = (result.stderr or '').strip() or (result.stdout or '').strip()
+        if not err:
+            err = f'exit {result.returncode}'
+        return {'ok': False, 'error': err[:500]}
+    except subprocess.TimeoutExpired:
+        return {'ok': False, 'error': 'K线拉取超时'}
+    except json.JSONDecodeError as e:
+        return {'ok': False, 'error': f'K线数据解析失败: {e}'}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     API_ROUTES = {
         'api/tracking': os.path.join('data', 'stock_tracking.json'),
@@ -256,9 +302,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({'ok': False, 'message': 'Not found'}, 404)
 
     def do_GET(self):
-        path = self.path.lstrip('/').split('?')[0]
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.lstrip('/')
         if path == 'api/task/status':
             self._send_json(dict(_task_state))
+            return
+
+        if path == 'api/kline':
+            q = urllib.parse.parse_qs(parsed.query)
+            code = (q.get('code') or [''])[0].strip()
+            start = (q.get('start') or [''])[0].strip()
+            days = (q.get('days') or ['30'])[0].strip() or '30'
+            if not code or not start:
+                self._send_json({'ok': False, 'error': '缺少参数 code 或 start'}, 400)
+                return
+            self._send_json(_fetch_kline_json(code, start, days))
             return
 
         if path == '' or path == 'dashboard.html':
